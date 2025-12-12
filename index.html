@@ -712,11 +712,28 @@
                 ...options.headers
             };
 
-            const response = await fetch(CORS_PROXY + encodeURIComponent(url), {
-                ...options,
-                headers
-            });
-            return response;
+            console.log('🌐 Requête Notion:', url);
+            console.log('📦 Body:', options.body);
+
+            try {
+                const response = await fetch(CORS_PROXY + encodeURIComponent(url), {
+                    ...options,
+                    headers
+                });
+                
+                console.log('📡 Réponse status:', response.status);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('❌ Erreur réponse:', errorText);
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                return response;
+            } catch (error) {
+                console.error('❌ Erreur fetch:', error);
+                throw error;
+            }
         }
 
         async function loadBooksFromNotion() {
@@ -791,47 +808,71 @@
         }
 
         async function createBookInNotion(bookData) {
+            console.log('➕ DÉBUT création livre:', bookData);
+            
             try {
-                console.log('Création livre dans Notion:', bookData);
+                const payload = {
+                    parent: { database_id: DATABASE_ID },
+                    properties: {
+                        'Titre': { 
+                            title: [{ text: { content: bookData.title } }] 
+                        },
+                        'URL': { 
+                            url: bookData.url 
+                        },
+                        'Couleur': { 
+                            rich_text: [{ text: { content: bookData.color } }] 
+                        },
+                        'Catégorie': { 
+                            select: { name: bookData.category } 
+                        },
+                        'Taille': { 
+                            select: { name: bookData.size || 'medium' } 
+                        }
+                    }
+                };
+                
+                console.log('📤 Payload:', JSON.stringify(payload, null, 2));
+                
                 const response = await notionFetch(
                     'https://api.notion.com/v1/pages',
                     {
                         method: 'POST',
-                        body: JSON.stringify({
-                            parent: { database_id: DATABASE_ID },
-                            properties: {
-                                'Titre': { title: [{ text: { content: bookData.title } }] },
-                                'URL': { url: bookData.url },
-                                'Couleur': { rich_text: [{ text: { content: bookData.color } }] },
-                                'Catégorie': { select: { name: bookData.category } },
-                                'Taille': { select: { name: bookData.size || 'medium' } }
-                            }
-                        })
+                        body: JSON.stringify(payload)
                     }
                 );
 
-                if (!response.ok) {
-                    const error = await response.json();
-                    console.error('Erreur API Notion:', error);
-                    throw new Error(error.message || 'Erreur de création');
-                }
-                
                 const result = await response.json();
-                console.log('Livre créé avec succès:', result);
+                console.log('✅ Livre créé:', result);
                 
                 // Notification de succès
-                const notif = document.createElement('div');
-                notif.style.cssText = 'position: fixed; top: 20px; right: 20px; background: rgba(122, 154, 122, 0.9); color: #fff; padding: 10px 20px; border-radius: 6px; z-index: 9999; font-size: 13px;';
-                notif.textContent = '✓ Livre ajouté à Notion';
-                document.body.appendChild(notif);
-                setTimeout(() => notif.remove(), 2000);
+                showNotification('✓ Livre ajouté à Notion', 'success');
                 
                 return result;
             } catch (error) {
-                console.error('Erreur création livre:', error);
-                alert(`Erreur lors de l'ajout : ${error.message}`);
+                console.error('❌ ERREUR création livre:', error);
+                showNotification(`❌ Erreur : ${error.message}`, 'error');
                 return null;
             }
+        }
+
+        function showNotification(message, type = 'success') {
+            const notif = document.createElement('div');
+            notif.style.cssText = `
+                position: fixed; 
+                top: 20px; 
+                right: 20px; 
+                background: ${type === 'success' ? 'rgba(122, 154, 122, 0.9)' : 'rgba(154, 122, 122, 0.9)'}; 
+                color: #fff; 
+                padding: 10px 20px; 
+                border-radius: 6px; 
+                z-index: 9999; 
+                font-size: 13px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            `;
+            notif.textContent = message;
+            document.body.appendChild(notif);
+            setTimeout(() => notif.remove(), 3000);
         }
 
         async function updateBookInNotion(pageId, bookData) {
@@ -973,15 +1014,34 @@
         }
 
         function toggleBookSize(index) {
+            console.log('🔄 Toggle taille livre:', index);
+            
             const sizes = ['small', 'medium', 'large'];
             const currentSize = BOOKS_CONFIG[index].size || 'medium';
             const currentIndex = sizes.indexOf(currentSize);
             const nextIndex = (currentIndex + 1) % sizes.length;
-            BOOKS_CONFIG[index].size = sizes[nextIndex];
+            const newSize = sizes[nextIndex];
+            
+            console.log(`Changement taille: ${currentSize} → ${newSize}`);
+            
+            BOOKS_CONFIG[index].size = newSize;
             
             if (STORAGE_MODE === 'notion' && BOOKS_CONFIG[index].pageId) {
-                updateBookInNotion(BOOKS_CONFIG[index].pageId, BOOKS_CONFIG[index]).then(() => {
-                    setTimeout(() => loadBooksFromNotion(), 1500);
+                console.log('💾 Sauvegarde taille dans Notion...');
+                
+                // Mettre à jour l'affichage immédiatement
+                generateLibrary();
+                
+                // Puis sauvegarder dans Notion
+                updateBookInNotion(BOOKS_CONFIG[index].pageId, BOOKS_CONFIG[index]).then((result) => {
+                    if (result) {
+                        console.log('✅ Taille mise à jour dans Notion');
+                        // Recharger après 2 secondes pour confirmer
+                        setTimeout(() => {
+                            console.log('🔄 Rechargement depuis Notion...');
+                            loadBooksFromNotion();
+                        }, 2000);
+                    }
                 });
             } else {
                 saveBooksToLocal();
@@ -1126,6 +1186,8 @@
 
         form.onsubmit = async (e) => {
             e.preventDefault();
+            console.log('📝 Soumission formulaire livre');
+            
             const bookData = {
                 title: document.getElementById('bookTitle').value,
                 url: document.getElementById('bookUrl').value,
@@ -1134,18 +1196,31 @@
                 size: 'medium'
             };
 
+            console.log('📊 Données du livre:', bookData);
+
             if (STORAGE_MODE === 'notion') {
-                closeModal(); // Fermer immédiatement pour meilleur UX
+                console.log('🌐 Mode Notion activé');
+                closeModal();
                 
                 if (editingIndex !== null && BOOKS_CONFIG[editingIndex].pageId) {
-                    await updateBookInNotion(BOOKS_CONFIG[editingIndex].pageId, bookData);
+                    console.log('✏️ Modification du livre existant');
+                    const result = await updateBookInNotion(BOOKS_CONFIG[editingIndex].pageId, bookData);
+                    if (result) {
+                        console.log('✅ Livre modifié, rechargement dans 2s...');
+                        setTimeout(() => loadBooksFromNotion(), 2000);
+                    }
                 } else {
-                    await createBookInNotion(bookData);
+                    console.log('➕ Création nouveau livre');
+                    const result = await createBookInNotion(bookData);
+                    if (result) {
+                        console.log('✅ Livre créé, rechargement dans 2s...');
+                        setTimeout(() => loadBooksFromNotion(), 2000);
+                    } else {
+                        console.error('❌ Échec création livre');
+                    }
                 }
-                
-                // Recharger depuis Notion après un court délai
-                setTimeout(() => loadBooksFromNotion(), 1500);
             } else {
+                console.log('💾 Mode local');
                 if (editingIndex !== null) {
                     BOOKS_CONFIG[editingIndex] = bookData;
                 } else {
@@ -1208,32 +1283,48 @@
         shelfForm.onsubmit = async (e) => {
             e.preventDefault();
             const newName = document.getElementById('shelfName').value;
+            
+            console.log('📖 Soumission formulaire étagère:', newName);
 
             if (STORAGE_MODE === 'notion') {
-                closeShelfModal(); // Fermer immédiatement
+                console.log('🌐 Mode Notion - Gestion étagère');
+                closeShelfModal();
                 
                 if (editingShelfName !== null) {
                     // Renommer l'étagère
                     const booksToUpdate = BOOKS_CONFIG.filter(b => b.category === editingShelfName);
-                    console.log(`Renommage de ${booksToUpdate.length} livres de "${editingShelfName}" vers "${newName}"`);
+                    console.log(`🔄 Renommage de ${booksToUpdate.length} livres de "${editingShelfName}" → "${newName}"`);
                     
                     for (const book of booksToUpdate) {
+                        console.log(`  Mise à jour livre: ${book.title}`);
                         await updateBookInNotion(book.pageId, {...book, category: newName});
                     }
+                    
+                    console.log('✅ Tous les livres renommés');
                 } else {
                     // Créer une nouvelle étagère avec un livre
-                    console.log(`Création nouvelle étagère "${newName}"`);
-                    await createBookInNotion({
+                    console.log(`➕ Création nouvelle étagère "${newName}"`);
+                    const result = await createBookInNotion({
                         title: 'Nouveau livre',
                         url: 'https://notion.so/',
                         color: '#6a7a7a',
                         category: newName,
                         size: 'medium'
                     });
+                    
+                    if (result) {
+                        console.log('✅ Étagère créée avec livre par défaut');
+                    } else {
+                        console.error('❌ Échec création étagère');
+                        showNotification('❌ Erreur lors de la création de l\'étagère', 'error');
+                        return;
+                    }
                 }
                 
-                setTimeout(() => loadBooksFromNotion(), 1500);
+                console.log('🔄 Rechargement dans 2s...');
+                setTimeout(() => loadBooksFromNotion(), 2000);
             } else {
+                console.log('💾 Mode local - Gestion étagère');
                 if (editingShelfName !== null) {
                     BOOKS_CONFIG.forEach(book => {
                         if (book.category === editingShelfName) {
