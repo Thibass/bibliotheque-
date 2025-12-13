@@ -669,10 +669,10 @@
                     BOOKS_CONFIG = JSON.parse(saved);
                 } catch (e) {
                     console.error('Erreur de chargement:', e);
-                    BOOKS_CONFIG = getDefaultBooks();
+                    BOOKS_CONFIG = [];
                 }
             } else {
-                BOOKS_CONFIG = getDefaultBooks();
+                BOOKS_CONFIG = [];
             }
             generateLibrary();
         }
@@ -794,20 +794,9 @@
                         size: page.properties.Taille?.select?.name || 'medium'
                     }));
 
-                // Si aucun livre, créer un livre par défaut
-                if (BOOKS_CONFIG.length === 0) {
-                    await createBookInNotion({
-                        title: "Test",
-                        url: "https://notion.so/",
-                        color: "#6a7a7a",
-                        category: "Général",
-                        size: "medium"
-                    });
-                    // Recharger après création
-                    setTimeout(() => loadBooksFromNotion(), 1000);
-                    return;
-                }
+                console.log(`📚 ${BOOKS_CONFIG.length} livre(s) chargé(s) depuis Notion`);
 
+                // Ne PAS créer de livre par défaut, juste afficher la bibliothèque vide
                 generateLibrary();
                 updateModeDisplay();
                 
@@ -825,10 +814,7 @@
                     loadingDiv.remove();
                 }, 3000);
                 
-                // Ne pas basculer en mode local, juste afficher l'erreur
-                if (BOOKS_CONFIG.length === 0) {
-                    BOOKS_CONFIG = getDefaultBooks();
-                }
+                // En cas d'erreur, afficher quand même l'interface
                 generateLibrary();
             }
         }
@@ -928,19 +914,31 @@
         }
 
         async function archiveBookInNotion(pageId) {
+            console.log('🗑️ DÉBUT suppression livre:', pageId);
+            
             try {
+                const payload = {
+                    archived: true
+                };
+                
+                console.log('📤 Archive payload:', JSON.stringify(payload, null, 2));
+                
                 const response = await notionFetch(
                     `https://api.notion.com/v1/pages/${pageId}`,
                     {
                         method: 'PATCH',
-                        body: JSON.stringify({ archived: true })
+                        body: JSON.stringify(payload)
                     }
                 );
 
-                if (!response.ok) throw new Error('Erreur de suppression');
-                return await response.json();
+                const result = await response.json();
+                console.log('✅ Livre archivé:', result);
+                showNotification('✓ Livre supprimé', 'success');
+                
+                return result;
             } catch (error) {
-                alert(`Erreur : ${error.message}`);
+                console.error('❌ ERREUR suppression:', error);
+                showNotification(`❌ Erreur : ${error.message}`, 'error');
                 return null;
             }
         }
@@ -1033,7 +1031,8 @@
             if (bookConfig.isHelp) {
                 book.onclick = () => openHelpModal();
             } else {
-                book.onclick = () => window.open(bookConfig.url, '_blank');
+                // Ouvrir dans le même onglet
+                book.onclick = () => window.location.href = bookConfig.url;
             }
 
             return book;
@@ -1113,6 +1112,64 @@
         function generateLibrary() {
             const library = document.getElementById('library');
             library.innerHTML = '';
+            
+            // Si aucun livre, afficher quand même une étagère avec le livre doré
+            if (BOOKS_CONFIG.length === 0) {
+                const shelfContainer = document.createElement('div');
+                shelfContainer.className = 'shelf-container';
+
+                const label = document.createElement('div');
+                label.className = 'shelf-label';
+                
+                const labelText = document.createElement('span');
+                labelText.className = 'shelf-label-text';
+                labelText.textContent = `📖 Général`;
+                labelText.onclick = () => openEditShelfModal('Général');
+                label.appendChild(labelText);
+
+                const shelfMenu = document.createElement('span');
+                shelfMenu.className = 'shelf-menu';
+                shelfMenu.textContent = '⋯';
+                shelfMenu.onclick = () => openEditShelfModal('Général');
+                label.appendChild(shelfMenu);
+
+                shelfContainer.appendChild(label);
+
+                const shelf = document.createElement('div');
+                shelf.className = 'shelf';
+
+                const booksDiv = document.createElement('div');
+                booksDiv.className = 'books';
+
+                // Ajouter uniquement le livre d'aide
+                const helpBook = {
+                    title: "💡 Guide",
+                    color: "#d4af37",
+                    size: "medium",
+                    isHelp: true
+                };
+                booksDiv.appendChild(createBook(helpBook, -1));
+
+                // Bouton d'ajout
+                const addBtn = document.createElement('div');
+                addBtn.className = 'add-book-btn';
+                addBtn.textContent = '+';
+                addBtn.onclick = () => openAddModal('Général');
+                booksDiv.appendChild(addBtn);
+
+                shelf.appendChild(booksDiv);
+
+                const board = document.createElement('div');
+                board.className = 'shelf-board';
+                shelf.appendChild(board);
+
+                shelfContainer.appendChild(shelf);
+                library.appendChild(shelfContainer);
+                
+                return;
+            }
+            
+            // Si il y a des livres, afficher normalement
             const categorizedBooks = organizeBooksByCategory(BOOKS_CONFIG);
 
             Object.entries(categorizedBooks).forEach(([category, books]) => {
@@ -1260,10 +1317,21 @@
 
         deleteBtn.onclick = async () => {
             if (editingIndex !== null && confirm('Voulez-vous vraiment supprimer ce livre ?')) {
+                console.log('🗑️ Suppression livre index:', editingIndex);
+                
                 if (STORAGE_MODE === 'notion' && BOOKS_CONFIG[editingIndex].pageId) {
+                    const pageId = BOOKS_CONFIG[editingIndex].pageId;
+                    console.log('📌 Page ID à supprimer:', pageId);
+                    
                     closeModal();
-                    await archiveBookInNotion(BOOKS_CONFIG[editingIndex].pageId);
-                    setTimeout(() => loadBooksFromNotion(), 1500);
+                    
+                    const result = await archiveBookInNotion(pageId);
+                    if (result) {
+                        console.log('✅ Livre supprimé, rechargement dans 2s...');
+                        setTimeout(() => loadBooksFromNotion(), 2000);
+                    } else {
+                        console.error('❌ Échec suppression');
+                    }
                 } else {
                     BOOKS_CONFIG.splice(editingIndex, 1);
                     saveBooksToLocal();
