@@ -897,14 +897,23 @@
         }
 
         async function archiveBookInNotion(pageId) {
-            console.log('🗑️ DÉBUT suppression livre:', pageId);
+            console.log('🗑️ === DÉBUT FONCTION archiveBookInNotion ===');
+            console.log('📌 Page ID reçu:', pageId);
+            console.log('🔑 Token défini:', NOTION_TOKEN ? 'OUI' : 'NON');
+            console.log('🗄️ Database ID:', DATABASE_ID);
+            
+            if (!pageId) {
+                console.error('❌ ERREUR: pageId est undefined/null');
+                return null;
+            }
             
             try {
                 const payload = {
                     archived: true
                 };
                 
-                console.log('📤 Archive payload:', JSON.stringify(payload, null, 2));
+                console.log('📤 Payload à envoyer:', JSON.stringify(payload, null, 2));
+                console.log('🌐 URL cible:', `https://api.notion.com/v1/pages/${pageId}`);
                 
                 const response = await notionFetch(
                     `https://api.notion.com/v1/pages/${pageId}`,
@@ -914,13 +923,18 @@
                     }
                 );
 
+                console.log('📥 Réponse reçue, parsing JSON...');
                 const result = await response.json();
-                console.log('✅ Livre archivé:', result);
+                console.log('✅ === FIN archiveBookInNotion - SUCCÈS ===');
+                console.log('📊 Résultat:', result);
                 showNotification('✓ Livre supprimé', 'success');
                 
                 return result;
             } catch (error) {
-                console.error('❌ ERREUR suppression:', error);
+                console.error('❌ === ERREUR dans archiveBookInNotion ===');
+                console.error('Type erreur:', error.name);
+                console.error('Message:', error.message);
+                console.error('Stack:', error.stack);
                 showNotification(`❌ Erreur : ${error.message}`, 'error');
                 return null;
             }
@@ -1299,44 +1313,70 @@
         };
 
         deleteBtn.onclick = async () => {
-            if (editingIndex === null) return;
+            console.log('🔴 === CLIC SUR BOUTON SUPPRIMER ===');
+            console.log('📍 editingIndex:', editingIndex);
+            console.log('📚 BOOKS_CONFIG:', BOOKS_CONFIG);
+            console.log('🎯 Livre à supprimer:', editingIndex !== null ? BOOKS_CONFIG[editingIndex] : 'AUCUN');
             
-            if (!confirm('Voulez-vous vraiment supprimer ce livre ?')) return;
+            if (editingIndex === null) {
+                console.error('❌ editingIndex est null, abandon');
+                alert('Erreur: Aucun livre sélectionné');
+                return;
+            }
             
-            console.log('🗑️ Début suppression livre index:', editingIndex);
-            console.log('📊 Livre à supprimer:', BOOKS_CONFIG[editingIndex]);
+            const bookToDelete = BOOKS_CONFIG[editingIndex];
+            console.log('📖 Détails du livre:', JSON.stringify(bookToDelete, null, 2));
             
-            if (STORAGE_MODE === 'notion' && BOOKS_CONFIG[editingIndex]?.pageId) {
-                const pageId = BOOKS_CONFIG[editingIndex].pageId;
-                console.log('📌 Page ID Notion:', pageId);
+            const userConfirmed = confirm('Voulez-vous vraiment supprimer ce livre ?');
+            console.log('👤 Confirmation utilisateur:', userConfirmed);
+            
+            if (!userConfirmed) {
+                console.log('🚫 Utilisateur a annulé');
+                return;
+            }
+            
+            console.log('✅ Confirmation OK, mode:', STORAGE_MODE);
+            console.log('🔍 pageId présent?', bookToDelete?.pageId ? 'OUI: ' + bookToDelete.pageId : 'NON');
+            
+            if (STORAGE_MODE === 'notion' && bookToDelete?.pageId) {
+                console.log('🌐 === MODE NOTION - Suppression en ligne ===');
+                const pageId = bookToDelete.pageId;
                 
                 closeModal();
                 showNotification('⏳ Suppression en cours...', 'success');
                 
+                console.log('📞 Appel de archiveBookInNotion avec pageId:', pageId);
+                
                 try {
                     const result = await archiveBookInNotion(pageId);
+                    console.log('📥 Retour de archiveBookInNotion:', result);
+                    
                     if (result) {
-                        console.log('✅ Suppression réussie, rechargement...');
+                        console.log('✅ Suppression réussie, rechargement dans 2s...');
                         showNotification('✓ Livre supprimé', 'success');
-                        // Attendre 2 secondes puis recharger
                         setTimeout(async () => {
+                            console.log('🔄 Rechargement de la bibliothèque...');
                             await loadBooksFromNotion();
+                            console.log('✅ Rechargement terminé');
                         }, 2000);
                     } else {
-                        console.error('❌ archiveBookInNotion a retourné null');
+                        console.error('❌ archiveBookInNotion a retourné null/false');
                         showNotification('❌ Erreur lors de la suppression', 'error');
                     }
                 } catch (error) {
-                    console.error('❌ Exception lors de la suppression:', error);
+                    console.error('❌ Exception capturée:', error);
                     showNotification(`❌ Erreur : ${error.message}`, 'error');
                 }
             } else {
-                console.log('💾 Mode local - suppression directe');
+                console.log('💾 === MODE LOCAL - Suppression directe ===');
                 BOOKS_CONFIG.splice(editingIndex, 1);
                 saveBooksToLocal();
                 generateLibrary();
                 closeModal();
+                console.log('✅ Livre supprimé en local');
             }
+            
+            console.log('🏁 === FIN FONCTION deleteBtn.onclick ===');
         };
 
         cancelBtn.onclick = closeModal;
@@ -1439,24 +1479,64 @@
         };
 
         deleteShelfBtn.onclick = async () => {
-            if (editingShelfName !== null && confirm('Voulez-vous vraiment supprimer cette étagère et tous ses livres ?')) {
-                if (STORAGE_MODE === 'notion') {
-                    closeShelfModal();
-                    const booksToDelete = BOOKS_CONFIG.filter(b => b.category === editingShelfName);
-                    console.log(`Suppression de ${booksToDelete.length} livres`);
-                    
-                    for (const book of booksToDelete) {
-                        await archiveBookInNotion(book.pageId);
-                    }
-                    
-                    setTimeout(() => loadBooksFromNotion(), 1500);
-                } else {
-                    BOOKS_CONFIG = BOOKS_CONFIG.filter(book => book.category !== editingShelfName);
-                    saveBooksToLocal();
-                    generateLibrary();
-                    closeShelfModal();
-                }
+            console.log('🔴 === CLIC SUR BOUTON SUPPRIMER ÉTAGÈRE ===');
+            console.log('📍 editingShelfName:', editingShelfName);
+            
+            if (editingShelfName === null) {
+                console.error('❌ editingShelfName est null');
+                alert('Erreur: Aucune étagère sélectionnée');
+                return;
             }
+            
+            const userConfirmed = confirm('Voulez-vous vraiment supprimer cette étagère et tous ses livres ?');
+            console.log('👤 Confirmation utilisateur:', userConfirmed);
+            
+            if (!userConfirmed) {
+                console.log('🚫 Utilisateur a annulé');
+                return;
+            }
+            
+            console.log('✅ Confirmation OK, mode:', STORAGE_MODE);
+            
+            if (STORAGE_MODE === 'notion') {
+                console.log('🌐 === MODE NOTION - Suppression étagère ===');
+                closeShelfModal();
+                
+                const booksToDelete = BOOKS_CONFIG.filter(b => b.category === editingShelfName);
+                console.log(`📚 ${booksToDelete.length} livre(s) à supprimer dans "${editingShelfName}"`);
+                
+                showNotification(`⏳ Suppression de ${booksToDelete.length} livre(s)...`, 'success');
+                
+                let successCount = 0;
+                for (const book of booksToDelete) {
+                    console.log(`🗑️ Suppression livre: ${book.title} (${book.pageId})`);
+                    const result = await archiveBookInNotion(book.pageId);
+                    if (result) {
+                        successCount++;
+                        console.log(`✅ ${successCount}/${booksToDelete.length} supprimé(s)`);
+                    }
+                }
+                
+                console.log(`✅ ${successCount} livre(s) supprimé(s) avec succès`);
+                showNotification(`✓ ${successCount} livre(s) supprimé(s)`, 'success');
+                
+                setTimeout(async () => {
+                    console.log('🔄 Rechargement de la bibliothèque...');
+                    await loadBooksFromNotion();
+                }, 2000);
+            } else {
+                console.log('💾 === MODE LOCAL - Suppression étagère ===');
+                const beforeCount = BOOKS_CONFIG.length;
+                BOOKS_CONFIG = BOOKS_CONFIG.filter(book => book.category !== editingShelfName);
+                const deletedCount = beforeCount - BOOKS_CONFIG.length;
+                console.log(`✅ ${deletedCount} livre(s) supprimé(s) en local`);
+                
+                saveBooksToLocal();
+                generateLibrary();
+                closeShelfModal();
+            }
+            
+            console.log('🏁 === FIN FONCTION deleteShelfBtn.onclick ===');
         };
 
         cancelShelfBtn.onclick = closeShelfModal;
