@@ -1434,10 +1434,11 @@
             editingShelfName = null;
         }
 
-        shelfForm.onsubmit = async (e) => {
+        shelfForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const newName = document.getElementById('shelfName').value;
             
+            showNotification('📖 Enregistrement étagère...', 'success', 2000);
             console.log('📖 Soumission formulaire étagère:', newName);
 
             if (STORAGE_MODE === 'notion') {
@@ -1447,6 +1448,7 @@
                 if (editingShelfName !== null) {
                     // Renommer l'étagère
                     const booksToUpdate = BOOKS_CONFIG.filter(b => b.category === editingShelfName);
+                    showNotification(`🔄 Renommage de ${booksToUpdate.length} livre(s)...`, 'success', 0);
                     console.log(`🔄 Renommage de ${booksToUpdate.length} livres de "${editingShelfName}" → "${newName}"`);
                     
                     for (const book of booksToUpdate) {
@@ -1454,9 +1456,11 @@
                         await updateBookInNotion(book.pageId, {...book, category: newName});
                     }
                     
+                    showNotification('✓ Étagère renommée !', 'success', 2000);
                     console.log('✅ Tous les livres renommés');
                 } else {
                     // Créer une nouvelle étagère avec un livre
+                    showNotification('➕ Création étagère...', 'success', 0);
                     console.log(`➕ Création nouvelle étagère "${newName}"`);
                     const result = await createBookInNotion({
                         title: 'Nouveau livre',
@@ -1467,10 +1471,11 @@
                     });
                     
                     if (result) {
+                        showNotification('✓ Étagère créée !', 'success', 2000);
                         console.log('✅ Étagère créée avec livre par défaut');
                     } else {
                         console.error('❌ Échec création étagère');
-                        showNotification('❌ Erreur lors de la création de l\'étagère', 'error');
+                        showNotification('❌ Erreur création', 'error', 5000);
                         return;
                     }
                 }
@@ -1497,83 +1502,64 @@
                 saveBooksToLocal();
                 generateLibrary();
                 closeShelfModal();
+                showNotification('✓ Étagère enregistrée !', 'success', 2000);
             }
-        };
+        });
 
-        deleteShelfBtn.onclick = async () => {
-            showNotification('🔴 Clic sur supprimer étagère', 'success', 2000);
+        // BOUTON SUPPRIMER ÉTAGÈRE - Utiliser addEventListener
+        deleteShelfBtn.addEventListener('click', async function() {
+            showNotification('🔴 BOUTON SUPPRIMER ÉTAGÈRE CLIQUÉ !', 'success', 3000);
             
-            console.log('🔴 === CLIC SUR BOUTON SUPPRIMER ÉTAGÈRE ===');
+            console.log('🔴 === CLIC DÉTECTÉ SUR BOUTON SUPPRIMER ÉTAGÈRE ===');
             console.log('📍 editingShelfName:', editingShelfName);
             
-            if (editingShelfName === null) {
-                console.error('❌ editingShelfName est null');
+            if (!editingShelfName) {
+                console.error('❌ editingShelfName vide');
                 showNotification('❌ Aucune étagère sélectionnée', 'error', 5000);
                 return;
             }
             
             const booksInShelf = BOOKS_CONFIG.filter(b => b.category === editingShelfName);
-            showNotification(`📖 Étagère: ${editingShelfName} (${booksInShelf.length} livres)`, 'success', 3000);
+            showNotification(`📖 "${editingShelfName}" (${booksInShelf.length} livres)`, 'success', 3000);
             
-            const userConfirmed = confirm(`Voulez-vous vraiment supprimer l'étagère "${editingShelfName}" et ses ${booksInShelf.length} livre(s) ?`);
-            console.log('👤 Confirmation utilisateur:', userConfirmed);
-            
-            if (!userConfirmed) {
-                console.log('🚫 Utilisateur a annulé');
-                showNotification('🚫 Suppression annulée', 'success', 2000);
+            if (!confirm(`Supprimer l'étagère "${editingShelfName}" et ses ${booksInShelf.length} livre(s) ?`)) {
+                showNotification('🚫 Annulé', 'success', 2000);
                 return;
             }
             
-            console.log('✅ Confirmation OK, mode:', STORAGE_MODE);
+            showNotification('✅ Confirmation OK', 'success', 2000);
             
             if (STORAGE_MODE === 'notion') {
                 showNotification(`🌐 Suppression de ${booksInShelf.length} livre(s)...`, 'success', 0);
-                console.log('🌐 === MODE NOTION - Suppression étagère ===');
                 closeShelfModal();
-                
-                console.log(`📚 ${booksInShelf.length} livre(s) à supprimer dans "${editingShelfName}"`);
                 
                 let successCount = 0;
                 for (let i = 0; i < booksInShelf.length; i++) {
                     const book = booksInShelf[i];
-                    showNotification(`⏳ ${i + 1}/${booksInShelf.length}: ${book.title}...`, 'success', 0);
-                    console.log(`🗑️ Suppression livre ${i + 1}/${booksInShelf.length}: ${book.title} (${book.pageId})`);
+                    showNotification(`⏳ ${i + 1}/${booksInShelf.length}: ${book.title}`, 'success', 0);
                     const result = await archiveBookInNotion(book.pageId);
-                    if (result) {
-                        successCount++;
-                        console.log(`✅ ${successCount}/${booksInShelf.length} supprimé(s)`);
-                    }
+                    if (result) successCount++;
                 }
                 
-                console.log(`✅ ${successCount} livre(s) supprimé(s) avec succès`);
-                showNotification(`✓ ${successCount}/${booksInShelf.length} livre(s) supprimé(s) !`, 'success', 3000);
-                
-                setTimeout(async () => {
-                    showNotification('🔄 Rechargement...', 'success', 2000);
-                    console.log('🔄 Rechargement de la bibliothèque...');
-                    await loadBooksFromNotion();
-                }, 2000);
+                showNotification(`✓ ${successCount}/${booksInShelf.length} supprimé(s) !`, 'success', 3000);
+                setTimeout(() => loadBooksFromNotion(), 2000);
             } else {
                 showNotification('💾 Suppression locale...', 'success', 2000);
-                console.log('💾 === MODE LOCAL - Suppression étagère ===');
                 const beforeCount = BOOKS_CONFIG.length;
                 BOOKS_CONFIG = BOOKS_CONFIG.filter(book => book.category !== editingShelfName);
                 const deletedCount = beforeCount - BOOKS_CONFIG.length;
-                console.log(`✅ ${deletedCount} livre(s) supprimé(s) en local`);
                 
                 saveBooksToLocal();
                 generateLibrary();
                 closeShelfModal();
                 showNotification(`✓ ${deletedCount} livre(s) supprimé(s) !`, 'success', 2000);
             }
-            
-            console.log('🏁 === FIN FONCTION deleteShelfBtn.onclick ===');
-        };
+        });
 
-        cancelShelfBtn.onclick = closeShelfModal;
-        shelfModal.onclick = (e) => {
+        cancelShelfBtn.addEventListener('click', closeShelfModal);
+        shelfModal.addEventListener('click', (e) => {
             if (e.target === shelfModal) closeShelfModal();
-        };
+        });
 
         // Gestion du modal d'aide
         const helpModal = document.getElementById('helpModal');
