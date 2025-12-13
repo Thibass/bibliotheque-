@@ -448,8 +448,6 @@
         <div class="add-shelf-btn" onclick="openAddShelfModal()">
             + Ajouter une étagère
         </div>
-
-        <!-- Modal pour ajouter/éditer un livre -->
         <div id="bookModal" class="modal">
             <div class="modal-content">
                 <h2 id="modalTitle">Ajouter un livre</h2>
@@ -513,13 +511,12 @@
                     <p>• Cliquez sur <strong>+ Ajouter une étagère</strong> pour créer une catégorie</p>
                     <p>• Supprimer une étagère supprime tous ses livres</p>
 
-                    <h3 style="margin-top: 20px; color: #d4af37; font-size: 16px;">💾 Gestion des données</h3>
+                    <h3 style="margin-top: 20px; color: #d4af37; font-size: 16px;">💾 Synchronisation</h3>
                     <p>• <strong>Mode actuel</strong> : <span id="currentMode" style="color: #7a9a7a;">Local (navigateur)</span></p>
-                    <p>• <strong>Exporter JSON</strong> : Télécharge une sauvegarde de vos données</p>
-                    <p>• <strong>Importer JSON</strong> : Restaure des données depuis un fichier</p>
-                    <p>• <strong>Réinitialiser</strong> : Retour à la configuration par défaut</p>
+                    <p>• Les modifications sont sauvegardées automatiquement</p>
+                    <p>• En mode Notion : synchronisation toutes les 30 secondes</p>
                     <p style="margin-top: 10px; font-size: 12px; color: #888;">
-                        💡 Astuce : Exportez régulièrement vos données pour éviter de les perdre
+                        💡 Vos données sont sauvegardées dans Notion si configuré, sinon localement
                     </p>
 
                     <h3 style="margin-top: 20px; color: #d4af37; font-size: 16px;">🔗 Connexion Notion (optionnel)</h3>
@@ -607,20 +604,6 @@
                     <button type="button" class="btn btn-primary" onclick="testNotionConnection()">🔌 Tester & Connecter</button>
                 </div>
             </div>
-        </div>
-
-        <div class="data-management">
-            <h3>🔧 Gestion des données</h3>
-            <div class="data-buttons">
-                <button class="btn-small btn-export" onclick="exportData()">📥 Exporter JSON</button>
-                <button class="btn-small btn-import" onclick="importData()">📤 Importer JSON</button>
-                <button class="btn-small btn-reset" onclick="resetData()">🔄 Réinitialiser</button>
-            </div>
-            <p style="margin-top: 15px; font-size: 12px; color: #777;">
-                Exporter : Télécharge vos données en JSON<br>
-                Importer : Charge des données depuis un fichier JSON<br>
-                Réinitialiser : Restaure la configuration par défaut
-            </p>
         </div>
     </div>
 
@@ -1316,28 +1299,43 @@
         };
 
         deleteBtn.onclick = async () => {
-            if (editingIndex !== null && confirm('Voulez-vous vraiment supprimer ce livre ?')) {
-                console.log('🗑️ Suppression livre index:', editingIndex);
+            if (editingIndex === null) return;
+            
+            if (!confirm('Voulez-vous vraiment supprimer ce livre ?')) return;
+            
+            console.log('🗑️ Début suppression livre index:', editingIndex);
+            console.log('📊 Livre à supprimer:', BOOKS_CONFIG[editingIndex]);
+            
+            if (STORAGE_MODE === 'notion' && BOOKS_CONFIG[editingIndex]?.pageId) {
+                const pageId = BOOKS_CONFIG[editingIndex].pageId;
+                console.log('📌 Page ID Notion:', pageId);
                 
-                if (STORAGE_MODE === 'notion' && BOOKS_CONFIG[editingIndex].pageId) {
-                    const pageId = BOOKS_CONFIG[editingIndex].pageId;
-                    console.log('📌 Page ID à supprimer:', pageId);
-                    
-                    closeModal();
-                    
+                closeModal();
+                showNotification('⏳ Suppression en cours...', 'success');
+                
+                try {
                     const result = await archiveBookInNotion(pageId);
                     if (result) {
-                        console.log('✅ Livre supprimé, rechargement dans 2s...');
-                        setTimeout(() => loadBooksFromNotion(), 2000);
+                        console.log('✅ Suppression réussie, rechargement...');
+                        showNotification('✓ Livre supprimé', 'success');
+                        // Attendre 2 secondes puis recharger
+                        setTimeout(async () => {
+                            await loadBooksFromNotion();
+                        }, 2000);
                     } else {
-                        console.error('❌ Échec suppression');
+                        console.error('❌ archiveBookInNotion a retourné null');
+                        showNotification('❌ Erreur lors de la suppression', 'error');
                     }
-                } else {
-                    BOOKS_CONFIG.splice(editingIndex, 1);
-                    saveBooksToLocal();
-                    generateLibrary();
-                    closeModal();
+                } catch (error) {
+                    console.error('❌ Exception lors de la suppression:', error);
+                    showNotification(`❌ Erreur : ${error.message}`, 'error');
                 }
+            } else {
+                console.log('💾 Mode local - suppression directe');
+                BOOKS_CONFIG.splice(editingIndex, 1);
+                saveBooksToLocal();
+                generateLibrary();
+                closeModal();
             }
         };
 
