@@ -851,24 +851,46 @@
             }
         }
 
-        function showNotification(message, type = 'success') {
+        function showNotification(message, type = 'success', duration = 3000) {
+            // Supprimer les anciennes notifications
+            const oldNotifs = document.querySelectorAll('.debug-notif');
+            oldNotifs.forEach(n => n.remove());
+            
             const notif = document.createElement('div');
+            notif.className = 'debug-notif';
             notif.style.cssText = `
                 position: fixed; 
                 top: 20px; 
                 right: 20px; 
-                background: ${type === 'success' ? 'rgba(122, 154, 122, 0.9)' : 'rgba(154, 122, 122, 0.9)'}; 
+                background: ${type === 'success' ? 'rgba(122, 154, 122, 0.95)' : 'rgba(154, 122, 122, 0.95)'}; 
                 color: #fff; 
-                padding: 10px 20px; 
-                border-radius: 6px; 
+                padding: 15px 20px; 
+                border-radius: 8px; 
                 z-index: 9999; 
-                font-size: 13px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                font-size: 14px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+                max-width: 350px;
+                word-wrap: break-word;
+                font-family: 'Courier New', monospace;
+                animation: slideIn 0.3s ease;
             `;
             notif.textContent = message;
             document.body.appendChild(notif);
-            setTimeout(() => notif.remove(), 3000);
+            
+            if (duration > 0) {
+                setTimeout(() => notif.remove(), duration);
+            }
         }
+        
+        // Ajouter l'animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(400px); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
 
         async function updateBookInNotion(pageId, bookData) {
             try {
@@ -1479,52 +1501,60 @@
         };
 
         deleteShelfBtn.onclick = async () => {
+            showNotification('🔴 Clic sur supprimer étagère', 'success', 2000);
+            
             console.log('🔴 === CLIC SUR BOUTON SUPPRIMER ÉTAGÈRE ===');
             console.log('📍 editingShelfName:', editingShelfName);
             
             if (editingShelfName === null) {
                 console.error('❌ editingShelfName est null');
-                alert('Erreur: Aucune étagère sélectionnée');
+                showNotification('❌ Aucune étagère sélectionnée', 'error', 5000);
                 return;
             }
             
-            const userConfirmed = confirm('Voulez-vous vraiment supprimer cette étagère et tous ses livres ?');
+            const booksInShelf = BOOKS_CONFIG.filter(b => b.category === editingShelfName);
+            showNotification(`📖 Étagère: ${editingShelfName} (${booksInShelf.length} livres)`, 'success', 3000);
+            
+            const userConfirmed = confirm(`Voulez-vous vraiment supprimer l'étagère "${editingShelfName}" et ses ${booksInShelf.length} livre(s) ?`);
             console.log('👤 Confirmation utilisateur:', userConfirmed);
             
             if (!userConfirmed) {
                 console.log('🚫 Utilisateur a annulé');
+                showNotification('🚫 Suppression annulée', 'success', 2000);
                 return;
             }
             
             console.log('✅ Confirmation OK, mode:', STORAGE_MODE);
             
             if (STORAGE_MODE === 'notion') {
+                showNotification(`🌐 Suppression de ${booksInShelf.length} livre(s)...`, 'success', 0);
                 console.log('🌐 === MODE NOTION - Suppression étagère ===');
                 closeShelfModal();
                 
-                const booksToDelete = BOOKS_CONFIG.filter(b => b.category === editingShelfName);
-                console.log(`📚 ${booksToDelete.length} livre(s) à supprimer dans "${editingShelfName}"`);
-                
-                showNotification(`⏳ Suppression de ${booksToDelete.length} livre(s)...`, 'success');
+                console.log(`📚 ${booksInShelf.length} livre(s) à supprimer dans "${editingShelfName}"`);
                 
                 let successCount = 0;
-                for (const book of booksToDelete) {
-                    console.log(`🗑️ Suppression livre: ${book.title} (${book.pageId})`);
+                for (let i = 0; i < booksInShelf.length; i++) {
+                    const book = booksInShelf[i];
+                    showNotification(`⏳ ${i + 1}/${booksInShelf.length}: ${book.title}...`, 'success', 0);
+                    console.log(`🗑️ Suppression livre ${i + 1}/${booksInShelf.length}: ${book.title} (${book.pageId})`);
                     const result = await archiveBookInNotion(book.pageId);
                     if (result) {
                         successCount++;
-                        console.log(`✅ ${successCount}/${booksToDelete.length} supprimé(s)`);
+                        console.log(`✅ ${successCount}/${booksInShelf.length} supprimé(s)`);
                     }
                 }
                 
                 console.log(`✅ ${successCount} livre(s) supprimé(s) avec succès`);
-                showNotification(`✓ ${successCount} livre(s) supprimé(s)`, 'success');
+                showNotification(`✓ ${successCount}/${booksInShelf.length} livre(s) supprimé(s) !`, 'success', 3000);
                 
                 setTimeout(async () => {
+                    showNotification('🔄 Rechargement...', 'success', 2000);
                     console.log('🔄 Rechargement de la bibliothèque...');
                     await loadBooksFromNotion();
                 }, 2000);
             } else {
+                showNotification('💾 Suppression locale...', 'success', 2000);
                 console.log('💾 === MODE LOCAL - Suppression étagère ===');
                 const beforeCount = BOOKS_CONFIG.length;
                 BOOKS_CONFIG = BOOKS_CONFIG.filter(book => book.category !== editingShelfName);
@@ -1534,6 +1564,7 @@
                 saveBooksToLocal();
                 generateLibrary();
                 closeShelfModal();
+                showNotification(`✓ ${deletedCount} livre(s) supprimé(s) !`, 'success', 2000);
             }
             
             console.log('🏁 === FIN FONCTION deleteShelfBtn.onclick ===');
